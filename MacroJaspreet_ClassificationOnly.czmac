@@ -1,0 +1,146 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Script>
+  <Context>Zen26</Context>
+  <Version>1.0</Version>
+  <Language>Python</Language>
+  <Text>#######################################################
+## IMAGE CLASSIFICATION WITH TILE EXPORT
+##
+## Macro name: Export tiles with main class csv file
+##
+## Required files: None
+## Required demo files: None
+##
+## Required module/licence: i.a. licence for image analysis
+##
+## DESCRIPTION: Batch process files with image analysis and extract the region and regions tables.
+## 
+## Copyright © 2022 by Carl Zeiss Microscopy GmbH.
+## Permission is granted to use, modify and distribute this code,
+## as long as this copyright notice remains part of the code.
+#######################################################
+
+# clear output
+Zen.Application.MacroEditor.ClearMessages()
+import csv
+import io
+from System.IO import File
+from System.IO import Directory, SearchOption, FileInfo, Path
+
+
+## Create dialog for Image Analysis
+# Get the image analysis profiles
+def getshortfiles(filelist):
+    files_short = []
+    for short in filelist:
+        files_short.append(Path.GetFileName(short))
+
+    return files_short
+
+docfolder = Zen.Application.Environment.GetFolderPath(ZenSpecialFolder.UserDocuments)
+PSMIP = Directory.GetFiles(Path.Combine(docfolder, 'Image Analysis Settings'), '*.czias')
+PSMIP_short = getshortfiles(PSMIP)
+
+
+window = ZenWindow()
+window.Title = 'select Image Analysis Setting         '
+window.AddFolderBrowser('sourcefolder', 'Source Folder with BF tiles only', str(ZenSpecialFolder.UserData))
+window.AddDropDown('IAset','select setting',PSMIP_short,0)
+result=window.Show()
+
+
+# get files from selected directory(ies)
+path = result.GetValue('sourcefolder')
+option = SearchOption.TopDirectoryOnly
+files = Directory.GetFiles(path, '*.tif', option)
+
+
+
+## Perform segmentation 
+# get name of the IA settings to apply
+IAset = result.GetValue('IAset')
+
+# exit macro if no setting exist
+if IAset == 0:
+    strMessage = 'no setting exist !\nRestart macro and create a setting!'
+    sys.exit(strMessage)
+
+
+setting = ZenImageAnalysisSetting()
+setting.Load(IAset)
+#Zen.Analyzing.Analyze(MidPlanBF, setting)
+#tabs = Zen.Analyzing.CreateRegionsTable(MidPlanBF)
+
+
+# Run Intellesis on the tile and export max value in CSV file
+def doIA(img,directory):
+
+    
+    setting = ZenImageAnalysisSetting()
+    setting.Load(IAset)
+    Zen.Analyzing.Analyze(img, setting)
+    # Get Region table
+    #tabs = Zen.Analyzing.CreateRegionTable(img) # Region for individual statistics
+    tabs = Zen.Analyzing.CreateRegionsTable(img) # Regions for sum of statistics
+    valueBG = tabs.GetValue(0,2)
+    valueGrey = tabs.GetValue(1,2)
+    valueWhite = tabs.GetValue(2,2)
+    
+    ImgClass = -1
+    if valueBG&gt;valueGrey and valueBG&gt;valueWhite: ImgClass = 0 
+    if valueGrey&gt;valueBG and valueGrey&gt;valueWhite: ImgClass = 1 
+    if valueWhite&gt;valueBG and valueWhite&gt;valueGrey: ImgClass = 2 
+    
+    row = [img,ImgClass,valueBG,valueGrey,valueWhite]
+
+    
+    # open the csv file in the write mode
+    with io.open(directory+'ClassesFile.csv', 'a', newline='') as csv_f:
+        # create the csv writer
+        writer = csv.writer(csv_f)
+        writer.writerow(row)
+        # close the file
+        csv_f.close()
+    
+    return ImgClass
+
+
+    
+
+    
+
+
+
+# go throught all files in list
+i = 1.0
+
+for f in files:
+    fileinfo = FileInfo(f)
+    ext = fileinfo.Extension
+    name = fileinfo.Name
+    directory = fileinfo.DirectoryName
+
+    if i == 1:
+        csv_f = io.open(directory+'ClassesFile.csv', 'w', newline='')
+        # create the csv writer
+        writer = csv.writer(csv_f)
+        writer.writerow(["TileName", "MainClass", "%AreaBackground", "%AreaGrey", "%AreaWhite"])
+        csv_f.close()
+
+    img = Zen.Application.LoadImage(f, False)
+    i = i+1
+    if img is not None:
+        # apply image Analysis
+        ImgClass = doIA(img,directory)
+        # place other processing functions here
+        print '%.1f %% - Processed file %s' %(((i-1) / len(files))* 100, f) +" is class " + str(ImgClass)
+    else:
+        print 'Error while processing file %s' %(name)
+    del img
+</Text>
+  <Author></Author>
+  <Description></Description>
+  <Keywords></Keywords>
+  <Row>111</Row>
+  <Column>1</Column>
+</Script>
